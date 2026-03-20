@@ -1,49 +1,70 @@
-const peer = new Peer();
+const arena = document.getElementById('arena');
+const status = document.getElementById('status');
+const localPlayer = document.getElementById('local-player');
+
+// --- 1. AUTO-ROOM LOGIC ---
+let roomID = window.location.hash.substring(1);
+const isJoining = !!roomID; 
+const peer = new Peer(); // PeerJS handles the heavy lifting
+
 const connections = {};
-let hostConn;
 const players = {};
-let score = 0;
-
-// Game State
-const myPos = { x: 50, y: 50 };
 const keys = {};
-const speed = 5;
+const myPos = { x: 50, y: 50 }; // Start in center (%)
+const speed = 0.7;
 
-const gameArea = document.getElementById('game-area');
-const orb = document.getElementById('orb');
+peer.on('open', (id) => {
+    if (!isJoining) {
+        window.location.hash = id;
+        status.innerText = "SHARE THIS URL TO INVITE FRIENDS!";
+    } else {
+        status.innerText = "Joining Arena...";
+        connectToPeer(roomID); // Connect to the person who shared the link
+    }
+});
 
-peer.on('open', (id) => { document.getElementById('my-id').innerText = id; });
-
-// --- HUB & RELAY LOGIC ---
+// --- 2. CONNECTION & MESH LOGIC ---
 peer.on('connection', (conn) => {
-    connections[conn.peer] = conn;
-    createRemotePlayer(conn.peer, '#ff00ff'); // Guests are pink
+    setupConnection(conn);
     
-    conn.on('data', (data) => {
-        if (data.type === 'move') {
-            updateRemotePos(data.id, data.x, data.y);
-            // Relay to other guests
-            for (let id in connections) {
-                if (id !== data.id) connections[id].send(data);
-            }
+    // Automatic Mesh: If I'm the first person, I tell new people about others
+    conn.on('open', () => {
+        const otherPeerIds = Object.keys(connections).filter(pid => pid !== conn.peer);
+        if (otherPeerIds.length > 0) {
+            conn.send({ type: 'INTRO', peers: otherPeerIds });
         }
     });
 });
 
-function connectToFriend() {
-    const id = document.getElementById('join-id').value;
-    hostConn = peer.connect(id);
-    hostConn.on('open', () => {
-        hostConn.on('data', (data) => {
-            if (data.type === 'move') {
-                if (!players[data.id]) createRemotePlayer(data.id, '#00ffff');
-                updateRemotePos(data.id, data.x, data.y);
+function connectToPeer(id) {
+    if (id === peer.id || connections[id]) return;
+    const conn = peer.connect(id);
+    setupConnection(conn);
+}
+
+function setupConnection(conn) {
+    conn.on('open', () => {
+        connections[conn.peer] = conn;
+        status.innerText = "PLAYERS ONLINE: " + (Object.keys(connections).length + 1);
+
+        conn.on('data', (data) => {
+            if (data.type === 'INTRO') {
+                data.peers.forEach(pid => connectToPeer(pid));
+            } else if (data.type === 'move') {
+                updateRemotePlayer(data.id, data.x, data.y);
             }
         });
     });
+
+    conn.on('close', () => {
+        if (players[conn.peer]) {
+            players[conn.peer].remove();
+            delete players[conn.peer];
+        }
+    });
 }
 
-// --- KEYBOARD ENGINE ---
+// --- 3. INPUT & GAME LOOP ---
 window.addEventListener('keydown', e => keys[e.code] = true);
 window.addEventListener('keyup', e => keys[e.code] = false);
 
@@ -55,39 +76,32 @@ function gameLoop() {
     if (keys['ArrowRight'] || keys['KeyD']) { myPos.x += speed; moved = true; }
 
     if (moved) {
-        // Boundary checks (Pixels because we are using fixed game area)
-        myPos.x = Math.max(0, Math.min(770, myPos.x));
-        myPos.y = Math.max(0, Math.min(470, myPos.y));
+        // Bounds checking
+        myPos.x = Math.max(2, Math.min(98, myPos.x));
+        myPos.y = Math.max(2, Math.min(98, myPos.y));
+        
+        localPlayer.style.left = myPos.x + '%';
+        localPlayer.style.top = myPos.y + '%';
 
-        const local = document.getElementById('local-player');
-        local.style.left = myPos.x + 'px';
-        local.style.top = myPos.y + 'px';
-
-        // Send to others
+        // Direct broadcast to all peers
         const payload = { type: 'move', id: peer.id, x: myPos.x, y: myPos.y };
-        if (hostConn) hostConn.send(payload);
-        else {
-            for (let id in connections) connections[id].send(payload);
+        for (let id in connections) {
+            if (connections[id].open) connections[id].send(payload);
         }
     }
     requestAnimationFrame(gameLoop);
 }
 
-function createRemotePlayer(id, color) {
-    if (players[id]) return;
-    const el = document.createElement('div');
-    el.className = 'player';
-    el.style.background = color;
-    gameArea.appendChild(el);
-    players[id] = el;
-}
-
-function updateRemotePos(id, x, y) {
-    if (players[id]) {
-        players[id].style.left = x + 'px';
-        players[id].style.top = y + 'px';
+function updateRemotePlayer(id, x, y) {
+    if (!players[id]) {
+        const el = document.createElement('div');
+        el.className = 'player';
+        el.style.color = '#f0f'; // Everyone else is Magenta
+        arena.appendChild(el);
+        players[id] = el;
     }
+    players[id].style.left = x + '%';
+    players[id].style.top = y + '%';
 }
 
-// Start the loop
 gameLoop();
