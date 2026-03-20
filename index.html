@@ -2,43 +2,27 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neon Crashers P2P</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Arena P2P</title>
     <style>
-        body { margin: 0; background: #050505; color: #00ff41; font-family: 'Courier New', Courier, monospace; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
-        #game-container { position: relative; margin-top: 20px; }
-        #game-area { 
-            width: 800px; height: 500px; border: 4px solid #00ff41; 
-            background: #000; position: relative; overflow: hidden;
-            box-shadow: 0 0 20px #00ff41;
-        }
+        body { margin: 0; background: #000; color: #0ff; font-family: monospace; overflow: hidden; }
+        #ui { position: absolute; top: 10px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
+        #arena { width: 100vw; height: 100vh; position: relative; }
         .player { 
-            position: absolute; width: 30px; height: 30px; 
-            background: #00ff41; border: 2px solid #fff;
-            box-shadow: 0 0 10px #00ff41; box-sizing: border-box;
+            position: absolute; width: 30px; height: 30px; border: 2px solid #fff;
+            box-shadow: 0 0 15px currentColor; transform: translate(-50%, -50%);
+            transition: all 0.05s linear; /* Smooths out network jitter */
         }
-        #orb { 
-            position: absolute; width: 20px; height: 20px; 
-            background: #ff00ff; border-radius: 50%; 
-            box-shadow: 0 0 15px #ff00ff; display: none;
-        }
-        #ui { text-align: center; padding: 10px; }
-        .score-board { font-size: 24px; margin: 10px; color: #ff00ff; }
-        kbd { background: #333; padding: 2px 4px; border-radius: 3px; border: 1px solid #777; }
+        #local-player { z-index: 5; background: #0ff; color: #0ff; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <h1>NEON CRASHERS</h1>
-        <p>Your ID: <span id="my-id">...</span> | <kbd>WASD</kbd> or <kbd>Arrows</kbd> to Move</p>
-        <input type="text" id="join-id" placeholder="Paste Host ID">
-        <button onclick="connectToFriend()">JOIN MATCH</button>
-        <div class="score-board">Score: <span id="score-val">0</span></div>
+        <h1>NEON ARENA</h1>
+        <p id="status">Initializing...</p>
     </div>
-
-    <div id="game-area">
-        <div id="orb"></div>
-        <div id="local-player" class="player" style="left: 50px; top: 50px;"></div>
+    <div id="arena">
+        <div id="local-player" class="player"></div>
     </div>
 
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
