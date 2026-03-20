@@ -1,119 +1,82 @@
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+const peer = new Peer();
+const connections = {}; 
+let hostConn; 
+const players = {};
+let myScore = 0;
 
-let player = { id: null, x: 100, y: 100, wood: 0 };
-let players = {};
-let trees = [];
-let walls = [];
+const gameArea = document.getElementById('game-area');
+const localPlayer = document.getElementById('local-player');
 
-let peer = new Peer();
-let conn;
+peer.on('open', (id) => { document.getElementById('my-id').innerText = id; });
 
-// Generate trees
-for (let i = 0; i < 20; i++) {
-  trees.push({
-    x: Math.random() * 750,
-    y: Math.random() * 450,
-    hp: 3
-  });
-}
-
-// Peer setup
-peer.on("open", id => {
-  player.id = id;
-  document.getElementById("roomDisplay").innerText = "Room ID: " + id;
-});
-
-peer.on("connection", connection => {
-  conn = connection;
-  setupConnection();
-});
-
-function createRoom() {
-  alert("Share your Room ID");
-}
-
-function joinRoom() {
-  conn = peer.connect(document.getElementById("roomInput").value);
-  conn.on("open", setupConnection);
-}
-
-function setupConnection() {
-  conn.on("data", data => {
-    players[data.id] = data;
-  });
-}
-
-// Send data
-function sync() {
-  if (conn && conn.open) {
-    conn.send(player);
-  }
-}
-
-// Movement
-document.addEventListener("keydown", e => {
-  if (e.key === "w") player.y -= 5;
-  if (e.key === "s") player.y += 5;
-  if (e.key === "a") player.x -= 5;
-  if (e.key === "d") player.x += 5;
-
-  // Gather wood
-  if (e.key === "e") {
-    trees.forEach(tree => {
-      if (dist(player, tree) < 30 && tree.hp > 0) {
-        tree.hp--;
-        if (tree.hp === 0) player.wood++;
-      }
+// --- CONNECTION HANDLING ---
+peer.on('connection', (conn) => {
+    connections[conn.peer] = conn;
+    createPlayerElement(conn.peer, '#f0f'); // Magenta for guests
+    
+    conn.on('data', (data) => {
+        if (data.type === 'move') {
+            updatePlayerPos(data.id, data.x, data.y);
+            // RELAY to other guests
+            for (let id in connections) {
+                if (id !== data.id) connections[id].send(data);
+            }
+        }
     });
-  }
-
-  // Build wall
-  if (e.key === "b" && player.wood > 0) {
-    walls.push({ x: player.x, y: player.y });
-    player.wood--;
-  }
-
-  sync();
 });
 
-// Distance helper
-function dist(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
+function connectToFriend() {
+    const hostId = document.getElementById('join-id').value;
+    hostConn = peer.connect(hostId);
+    hostConn.on('open', () => {
+        hostConn.on('data', (data) => {
+            if (data.type === 'move') {
+                if (!players[data.id]) createPlayerElement(data.id, '#ff0'); // Yellow for others
+                updatePlayerPos(data.id, data.x, data.y);
+            }
+        });
+    });
 }
 
-// Draw everything
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Trees
-  ctx.fillStyle = "green";
-  trees.forEach(t => {
-    if (t.hp > 0) ctx.fillRect(t.x, t.y, 20, 20);
-  });
-
-  // Walls
-  ctx.fillStyle = "gray";
-  walls.forEach(w => {
-    ctx.fillRect(w.x, w.y, 25, 25);
-  });
-
-  // Other players
-  ctx.fillStyle = "red";
-  for (let id in players) {
-    let p = players[id];
-    ctx.fillRect(p.x, p.y, 20, 20);
-  }
-
-  // You
-  ctx.fillStyle = "lime";
-  ctx.fillRect(player.x, player.y, 20, 20);
-
-  // UI
-  document.getElementById("inventory").innerText =
-    "Wood: " + player.wood;
-
-  requestAnimationFrame(draw);
+// --- GAME MECHANICS ---
+function createPlayerElement(id, color) {
+    if (players[id]) return;
+    const el = document.createElement('div');
+    el.className = 'player';
+    el.style.backgroundColor = color;
+    el.style.color = color;
+    gameArea.appendChild(el);
+    players[id] = el;
 }
 
-draw();
+function updatePlayerPos(id, x, y) {
+    if (players[id]) {
+        players[id].style.left = x + '%';
+        players[id].style.top = y + '%';
+    }
+}
+
+function handleInput(e) {
+    const rect = gameArea.getBoundingClientRect();
+    const xRaw = e.touches ? e.touches[0].clientX : e.clientX;
+    const yRaw = e.touches ? e.touches[0].clientY : e.clientY;
+
+    const x = Math.max(2, Math.min(98, ((xRaw - rect.left) / rect.width) * 100));
+    const y = Math.max(2, Math.min(98, ((yRaw - rect.top) / rect.height) * 100));
+
+    localPlayer.style.left = x + '%';
+    localPlayer.style.top = y + '%';
+
+    const moveData = { type: 'move', id: peer.id, x: x, y: y };
+
+    if (hostConn && hostConn.open) {
+        hostConn.send(moveData);
+    } else {
+        for (let id in connections) {
+            connections[id].send(moveData);
+        }
+    }
+}
+
+gameArea.addEventListener('mousemove', handleInput);
+gameArea.addEventListener('touchmove', (e) => { e.preventDefault(); handleInput(e); }, { passive: false });
