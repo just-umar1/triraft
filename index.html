@@ -39,10 +39,16 @@
         // Remove a player when they leave
         socket.on('player-disconnected', (id) => { delete players[id]; });
 
-        window.addEventListener('mousemove', (e) => {
-            const myPos = { x: e.clientX, y: e.clientY, color: '#00f7ff' };
-            // Send our position to your laptop
-            socket.emit('move', myPos);
+        let lastSendTime = 0;
+
+    window.addEventListener('mousemove', (e) => {
+    const now = Date.now();
+    // Only send data every 30 milliseconds (roughly 33fps)
+    if (now - lastSendTime > 30) {
+        const myPos = { x: e.clientX, y: e.clientY, color: '#00f7ff' };
+        socket.emit('move', myPos);
+        lastSendTime = now;
+        }
         });
 
         function draw() {
