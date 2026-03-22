@@ -1,0 +1,69 @@
+* { 
+    touch-action: none; 
+    box-sizing: border-box; 
+}
+
+body { 
+    margin: 0; 
+    background: #0b140b; 
+    overflow: hidden; 
+    font-family: 'Courier New', monospace; 
+    color: #7cff7c; 
+}
+
+#ui { 
+    position: fixed; 
+    top: 10px; 
+    left: 10px; 
+    z-index: 10; 
+    text-shadow: 2px 2px #000;
+}
+
+/* New Scoreboard Styling */
+#scoreboard {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(11, 20, 11, 0.8);
+    border: 1px solid #1a2e1a;
+    padding: 10px;
+    min-width: 150px;
+    z-index: 10;
+}
+
+#scoreboard .header {
+    border-bottom: 1px solid #7cff7c;
+    margin-bottom: 5px;
+    font-weight: bold;
+    font-size: 0.8em;
+}
+
+#player-list {
+    font-size: 0.9em;
+}
+
+#joystick { 
+    position: fixed; 
+    bottom: 40px; 
+    left: 40px; 
+    width: 100px; 
+    height: 100px; 
+    border: 2px solid #7cff7c; 
+    border-radius: 50%; 
+    display: none; 
+}
+
+#knob { 
+    position: absolute; 
+    top: 25px; 
+    left: 25px; 
+    width: 50px; 
+    height: 50px; 
+    background: #7cff7c; 
+    border-radius: 50%; 
+    opacity: 0.5; 
+}
+
+@media (pointer: coarse) { 
+    #joystick { display: block; } 
+}
