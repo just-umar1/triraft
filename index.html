@@ -3,24 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NEON ARCADE MOBILE</title>
+    <title>NEON ARCADE: PRO CONTROLS</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        /* Prevents weird scrolling/zooming on mobile */
-        * { touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; }
-        body { margin: 0; background: #050505; overflow: hidden; font-family: sans-serif; color: #00f7ff; }
+        * { touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; box-sizing: border-box; }
+        body { margin: 0; background: #050505; overflow: hidden; font-family: 'Courier New', monospace; color: #00f7ff; }
         canvas { display: block; }
-        #ui { 
-            position: absolute; top: 10px; left: 10px; pointer-events: none; 
-            font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+        #ui { position: absolute; top: 10px; left: 10px; pointer-events: none; z-index: 10; font-size: 14px; }
+        
+        /* Joystick Styles */
+        #joystick-container {
+            position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px;
+            background: rgba(0, 247, 255, 0.1); border: 2px solid #00f7ff; border-radius: 50%;
+            display: none; touch-action: none;
         }
+        #joystick-knob {
+            position: absolute; top: 35px; left: 35px; width: 50px; height: 50px;
+            background: #00f7ff; border-radius: 50%; box-shadow: 0 0 15px #00f7ff;
+        }
+        @media (pointer: coarse) { #joystick-container { display: block; } }
     </style>
 </head>
 <body>
-    <div id="ui">
-        <div id="status">CONNECTING...</div>
-        <div id="player-count">PLAYERS: 1</div>
+    <div id="ui">STATUS: <span id="status">CONNECTING</span> | PLAYERS: <span id="count">1</span></div>
+    
+    <div id="joystick-container">
+        <div id="joystick-knob"></div>
     </div>
+
     <canvas id="canvas"></canvas>
 
     <script>
@@ -28,210 +38,123 @@
         const socket = io(SERVER_URL);
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-
-        // Dynamic Resizing
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resize);
-        resize();
+        const knob = document.getElementById('joystick-knob');
 
         let players = {};
         let bullets = [];
-        let myPos = { x: canvas.width/2, y: canvas.height/2, color: '#00f7ff' };
+        let myPos = { x: window.innerWidth/2, y: window.innerHeight/2, color: '#00f7ff', speed: 5 };
+        let keys = { w: false, a: false, s: false, d: false };
         let lastSend = 0;
 
-        socket.on('connect', () => { document.getElementById('status').innerText = "ONLINE"; });
-        socket.on('current-players', (data) => { players = data; updateCount(); });
-        socket.on('player-moved', (data) => { players[data.id] = data; });
-        socket.on('player-disconnected', (id) => { delete players[id]; updateCount(); });
-        socket.on('bullet-spawned', (b) => { bullets.push({ ...b, time: Date.now() }); });
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resize);
+        resize();
 
-        function updateCount() {
-            document.getElementById('player-count').innerText = "PLAYERS: " + (Object.keys(players).length + 1);
-        }
+        // --- NETWORK ---
+        socket.on('connect', () => document.getElementById('status').innerText = "ONLINE");
+        socket.on('current-players', (data) => { players = data; updateUI(); });
+        socket.on('player-moved', (data) => players[data.id] = data);
+        socket.on('player-disconnected', (id) => { delete players[id]; updateUI(); });
+        socket.on('bullet-spawned', (b) => bullets.push({ ...b, time: Date.now() }));
+        function updateUI() { document.getElementById('count').innerText = Object.keys(players).length + 1; }
 
-        // --- UNIFIED INPUT (Mouse + Touch) ---
-        function handleInput(x, y, isNewTouch) {
-            myPos.x = x;
-            myPos.y = y;
+        // --- PC CONTROLS (WASD) ---
+        window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; });
+        window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
+        window.addEventListener('mousedown', (e) => {
+            const angle = Math.atan2(e.clientY - myPos.y, e.clientX - myPos.x);
+            socket.emit('shoot', { angle });
+        });
 
-            if (isNewTouch) {
-                const angle = Math.atan2(y - myPos.y, x - myPos.x); // Usually for mouse
-                // For mobile, we'll just shoot toward where they tapped
-                socket.emit('shoot', { angle: Math.random() * Math.PI * 2 }); 
+        // --- MOBILE CONTROLS (JOYSTICK) ---
+        let joystickActive = false;
+        let moveVec = { x: 0, y: 0 };
+
+        window.addEventListener('touchstart', (e) => {
+            if (e.target.id === 'joystick-knob' || e.target.id === 'joystick-container') {
+                joystickActive = true;
+            } else {
+                // Tap elsewhere to shoot
+                const t = e.touches[0];
+                const angle = Math.atan2(t.clientY - myPos.y, t.clientX - myPos.x);
+                socket.emit('shoot', { angle });
             }
+        });
+
+        window.addEventListener('touchmove', (e) => {
+            if (!joystickActive) return;
+            const t = e.touches[0];
+            const rect = document.getElementById('joystick-container').getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            let dx = t.clientX - centerX;
+            let dy = t.clientY - centerY;
+            const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 40);
+            const angle = Math.atan2(dy, dx);
+            
+            moveVec.x = Math.cos(angle) * (dist / 40);
+            moveVec.y = Math.sin(angle) * (dist / 40);
+            
+            knob.style.transform = `translate(${moveVec.x * 40}px, ${moveVec.y * 40}px)`;
+        });
+
+        window.addEventListener('touchend', () => {
+            joystickActive = false;
+            moveVec = { x: 0, y: 0 };
+            knob.style.transform = `translate(0,0)`;
+        });
+
+        // --- GAME LOOP ---
+        function update() {
+            // PC Movement
+            if (keys.w) myPos.y -= myPos.speed;
+            if (keys.s) myPos.y += myPos.speed;
+            if (keys.a) myPos.x -= myPos.speed;
+            if (keys.d) myPos.x += myPos.speed;
+
+            // Mobile Movement
+            myPos.x += moveVec.x * myPos.speed;
+            myPos.y += moveVec.y * myPos.speed;
+
+            // Keep in bounds
+            myPos.x = Math.max(0, Math.min(canvas.width, myPos.x));
+            myPos.y = Math.max(0, Math.min(canvas.height, myPos.y));
 
             const now = Date.now();
-            if (now - lastSend > 33) {
+            if (now - lastSend > 30) {
                 socket.emit('move', { x: myPos.x, y: myPos.y, color: myPos.color });
                 lastSend = now;
             }
         }
 
-        // Mouse Listeners
-        window.addEventListener('mousemove', (e) => handleInput(e.clientX, e.clientY, false));
-        window.addEventListener('mousedown', (e) => {
-            const angle = Math.atan2(e.clientY - myPos.y, e.clientX - myPos.x);
-            socket.emit('shoot', { angle: angle });
-        });
-
-        // Touch Listeners
-        window.addEventListener('touchstart', (e) => {
-            const touch = e.touches[0];
-            handleInput(touch.clientX, touch.clientY, true);
-        });
-        window.addEventListener('touchmove', (e) => {
-            const touch = e.touches[0];
-            handleInput(touch.clientX, touch.clientY, false);
-        });
-
         function draw() {
-            ctx.fillStyle = 'rgba(5, 5, 5, 0.2)';
+            update();
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.3)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             const now = Date.now();
-
-            // Bullets
-            bullets = bullets.filter(b => now - b.time < 1500);
+            bullets = bullets.filter(b => now - b.time < 2000);
             bullets.forEach(b => {
-                b.x += Math.cos(b.angle) * 10;
-                b.y += Math.sin(b.angle) * 10;
+                b.x += Math.cos(b.angle) * 12;
+                b.y += Math.sin(b.angle) * 12;
                 ctx.fillStyle = "#fff700";
                 ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI * 2); ctx.fill();
             });
 
-            // Others
             for (let id in players) {
                 if (id === socket.id) continue;
                 ctx.fillStyle = players[id].color || "#ff3e3e";
-                ctx.beginPath(); ctx.arc(players[id].x, players[id].y, 15, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(players[id].x, players[id].y, 18, 0, Math.PI * 2); ctx.fill();
             }
 
-            // Me
             ctx.fillStyle = myPos.color;
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = myPos.color;
-            ctx.beginPath(); ctx.arc(myPos.x, myPos.y, 15, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 15; ctx.shadowColor = myPos.color;
+            ctx.beginPath(); ctx.arc(myPos.x, myPos.y, 18, 0, Math.PI * 2); ctx.fill();
             ctx.shadowBlur = 0;
 
             requestAnimationFrame(draw);
         }
-        draw();
-    </script>
-</body>
-</html><!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NEON ARCADE MULTIPLAYER</title>
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <style>
-        body { margin: 0; background: #050505; overflow: hidden; font-family: 'Courier New', monospace; color: #00f7ff; }
-        canvas { display: block; cursor: crosshair; }
-        #ui { position: absolute; top: 20px; left: 20px; pointer-events: none; text-shadow: 0 0 10px #00f7ff; }
-    </style>
-</head>
-<body>
-    <div id="ui">
-        <h1>ARCADE_SESSION_ACTIVE</h1>
-        <p id="status">CONNECTING...</p>
-        <p>CLICK TO SHOOT | MOVE MOUSE TO NAVIGATE</p>
-    </div>
-    <canvas id="canvas"></canvas>
-
-    <script>
-        // --- CONFIGURATION ---
-        const SERVER_URL = "https://typical-technological-especially-carey.trycloudflare.com"; 
-        const socket = io(SERVER_URL);
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const status = document.getElementById('status');
-
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-
-        // --- GAME STATE ---
-        let players = {};
-        let bullets = [];
-        let myPos = { x: canvas.width/2, y: canvas.height/2, color: '#00f7ff' };
-        let lastSend = 0;
-
-        // --- NETWORK EVENTS ---
-        socket.on('connect', () => { status.innerText = "STATUS: ONLINE"; });
-        socket.on('disconnect', () => { status.innerText = "STATUS: OFFLINE"; });
-        socket.on('current-players', (data) => { players = data; });
-        socket.on('player-moved', (data) => { players[data.id] = data; });
-        socket.on('player-disconnected', (id) => { delete players[id]; });
-        socket.on('bullet-spawned', (b) => { 
-            bullets.push({ ...b, time: Date.now() }); 
-        });
-
-        // --- INPUTS ---
-        window.addEventListener('mousemove', (e) => {
-            myPos.x = e.clientX;
-            myPos.y = e.clientY;
-            
-            // Throttle network updates to 30fps to prevent stalling
-            const now = Date.now();
-            if (now - lastSend > 33) {
-                socket.emit('move', { x: myPos.x, y: myPos.y, color: myPos.color });
-                lastSend = now;
-            }
-        });
-
-        window.addEventListener('mousedown', (e) => {
-            const angle = Math.atan2(e.clientY - myPos.y, e.clientX - myPos.x);
-            socket.emit('shoot', { angle: angle });
-        });
-
-        // --- CORE LOOP ---
-        function draw() {
-            // Motion Blur Effect
-            ctx.fillStyle = 'rgba(5, 5, 5, 0.15)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            const now = Date.now();
-
-            // Draw & Update Bullets
-            bullets = bullets.filter(b => now - b.time < 1500); // Kill bullets after 1.5s
-            bullets.forEach(b => {
-                b.x += Math.cos(b.angle) * 12;
-                b.y += Math.sin(b.angle) * 12;
-                
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = "#fff700";
-                ctx.fillStyle = "#fff700";
-                ctx.beginPath();
-                ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
-                ctx.fill();
-            });
-
-            // Draw Other Players
-            for (let id in players) {
-                if (id === socket.id) continue; // Don't draw ourselves twice
-                const p = players[id];
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = p.color || "#ff3e3e";
-                ctx.fillStyle = p.color || "#ff3e3e";
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            // Draw Me
-            ctx.shadowBlur = 25;
-            ctx.shadowColor = myPos.color;
-            ctx.fillStyle = myPos.color;
-            ctx.beginPath();
-            ctx.arc(myPos.x, myPos.y, 12, 0, Math.PI * 2);
-            ctx.fill();
-
-            requestAnimationFrame(draw);
-        }
-
         draw();
     </script>
 </body>
