@@ -3,6 +3,105 @@
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>WILDWOOD STABLE</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        * { touch-action: none; box-sizing: border-box; }
+        body { margin: 0; background: #0b140b; overflow: hidden; font-family: monospace; color: #7cff7c; }
+        #ui { position: fixed; top: 10px; left: 10px; z-index: 10; pointer-events: none; }
+        #joystick { position: fixed; bottom: 40px; left: 40px; width: 100px; height: 100px; border: 2px solid #7cff7c; border-radius: 50%; display: none; }
+        #knob { position: absolute; top: 25px; left: 25px; width: 50px; height: 50px; background: #7cff7c; border-radius: 50%; opacity: 0.5; }
+        @media (pointer: coarse) { #joystick { display: block; } }
+    </style>
+</head>
+<body>
+    <div id="ui">STATUS: <span id="st">CONNECTING...</span></div>
+    <div id="joystick"><div id="knob"></div></div>
+    <canvas id="c"></canvas>
+
+    <script>
+        const socket = io("https://your-link.trycloudflare.com"); // <--- UPDATE THIS
+        const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+        
+        let players = {}, bullets = [], shadows = [];
+        let myPos = { x: 1000, y: 1000, color: '#7cff7c' };
+        let cam = { x: 0, y: 0 }, keys = {}, joy = {x:0,y:0};
+
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+
+        socket.on('connect', () => { document.getElementById('st').innerText = "ONLINE"; });
+        socket.on('player-moved', d => players[d.id] = d);
+        socket.on('player-disconnected', id => delete players[id]);
+        socket.on('shadows-update', data => shadows = data);
+        socket.on('bullet-spawned', b => bullets.push(b));
+
+        window.onkeydown = e => keys[e.key.toLowerCase()] = 1;
+        window.onkeyup = e => keys[e.key.toLowerCase()] = 0;
+        window.onmousedown = e => {
+            const angle = Math.atan2(e.clientY + cam.y - myPos.y, e.clientX + cam.x - myPos.x);
+            socket.emit('shoot', { x: myPos.x, y: myPos.y, angle: angle });
+        };
+
+        // Joystick Logic
+        const j = document.getElementById('joystick'), k = document.getElementById('knob');
+        j.ontouchmove = e => {
+            let t = e.touches[0], r = j.getBoundingClientRect();
+            let dx = t.clientX - (r.left + 50), dy = t.clientY - (r.top + 50);
+            let a = Math.atan2(dy, dx), d = Math.min(Math.sqrt(dx*dx+dy*dy), 40);
+            joy = {x: Math.cos(a)*(d/40), y: Math.sin(a)*(d/40)};
+            k.style.transform = `translate(${joy.x*40}px,${joy.y*40}px)`;
+        };
+        j.ontouchend = () => { joy = {x:0,y:0}; k.style.transform = 'none'; };
+
+        function draw() {
+            // Movement
+            if(keys.w) myPos.y -= 5; if(keys.s) myPos.y += 5;
+            if(keys.a) myPos.x -= 5; if(keys.d) myPos.x += 5;
+            myPos.x += joy.x * 5; myPos.y += joy.y * 5;
+            socket.emit('move', myPos);
+
+            cam.x = myPos.x - canvas.width/2; cam.y = myPos.y - canvas.height/2;
+
+            ctx.fillStyle = '#0b140b'; ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.save(); ctx.translate(-cam.x, -cam.y);
+
+            // Grid
+            ctx.strokeStyle = '#1a2e1a';
+            for(let i=0; i<2000; i+=100) { ctx.strokeRect(i, 0, 100, 2000); ctx.strokeRect(0, i, 2000, 100); }
+
+            // Draw Shadows
+            shadows.forEach(s => {
+                ctx.fillStyle = '#ff3e3e';
+                ctx.beginPath(); ctx.arc(s.x, s.y, 20, 0, 7); ctx.fill();
+            });
+
+            // Draw Bullets
+            bullets = bullets.filter(b => Date.now() - b.t < 1500);
+            bullets.forEach(b => {
+                b.x += Math.cos(b.angle) * 15; b.y += Math.sin(b.angle) * 15;
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, 7); ctx.fill();
+            });
+
+            // Draw Others
+            for(let id in players) {
+                if(id === socket.id) continue;
+                ctx.fillStyle = 'rgba(124, 255, 124, 0.4)';
+                ctx.beginPath(); ctx.arc(players[id].x, players[id].y, 15, 0, 7); ctx.fill();
+            }
+
+            // Draw Me
+            ctx.fillStyle = '#7cff7c'; ctx.beginPath(); ctx.arc(myPos.x, myPos.y, 15, 0, 7); ctx.fill();
+
+            ctx.restore();
+            requestAnimationFrame(draw);
+        }
+        draw();
+    </script>
+</body>
+</html><!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>WILDWOOD STABLE</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
