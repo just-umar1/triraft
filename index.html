@@ -2,6 +2,129 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEON ARCADE MOBILE</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        /* Prevents weird scrolling/zooming on mobile */
+        * { touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; }
+        body { margin: 0; background: #050505; overflow: hidden; font-family: sans-serif; color: #00f7ff; }
+        canvas { display: block; }
+        #ui { 
+            position: absolute; top: 10px; left: 10px; pointer-events: none; 
+            font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="status">CONNECTING...</div>
+        <div id="player-count">PLAYERS: 1</div>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const SERVER_URL = "https://your-link-here.trycloudflare.com"; 
+        const socket = io(SERVER_URL);
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Dynamic Resizing
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        let players = {};
+        let bullets = [];
+        let myPos = { x: canvas.width/2, y: canvas.height/2, color: '#00f7ff' };
+        let lastSend = 0;
+
+        socket.on('connect', () => { document.getElementById('status').innerText = "ONLINE"; });
+        socket.on('current-players', (data) => { players = data; updateCount(); });
+        socket.on('player-moved', (data) => { players[data.id] = data; });
+        socket.on('player-disconnected', (id) => { delete players[id]; updateCount(); });
+        socket.on('bullet-spawned', (b) => { bullets.push({ ...b, time: Date.now() }); });
+
+        function updateCount() {
+            document.getElementById('player-count').innerText = "PLAYERS: " + (Object.keys(players).length + 1);
+        }
+
+        // --- UNIFIED INPUT (Mouse + Touch) ---
+        function handleInput(x, y, isNewTouch) {
+            myPos.x = x;
+            myPos.y = y;
+
+            if (isNewTouch) {
+                const angle = Math.atan2(y - myPos.y, x - myPos.x); // Usually for mouse
+                // For mobile, we'll just shoot toward where they tapped
+                socket.emit('shoot', { angle: Math.random() * Math.PI * 2 }); 
+            }
+
+            const now = Date.now();
+            if (now - lastSend > 33) {
+                socket.emit('move', { x: myPos.x, y: myPos.y, color: myPos.color });
+                lastSend = now;
+            }
+        }
+
+        // Mouse Listeners
+        window.addEventListener('mousemove', (e) => handleInput(e.clientX, e.clientY, false));
+        window.addEventListener('mousedown', (e) => {
+            const angle = Math.atan2(e.clientY - myPos.y, e.clientX - myPos.x);
+            socket.emit('shoot', { angle: angle });
+        });
+
+        // Touch Listeners
+        window.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            handleInput(touch.clientX, touch.clientY, true);
+        });
+        window.addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            handleInput(touch.clientX, touch.clientY, false);
+        });
+
+        function draw() {
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const now = Date.now();
+
+            // Bullets
+            bullets = bullets.filter(b => now - b.time < 1500);
+            bullets.forEach(b => {
+                b.x += Math.cos(b.angle) * 10;
+                b.y += Math.sin(b.angle) * 10;
+                ctx.fillStyle = "#fff700";
+                ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI * 2); ctx.fill();
+            });
+
+            // Others
+            for (let id in players) {
+                if (id === socket.id) continue;
+                ctx.fillStyle = players[id].color || "#ff3e3e";
+                ctx.beginPath(); ctx.arc(players[id].x, players[id].y, 15, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Me
+            ctx.fillStyle = myPos.color;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = myPos.color;
+            ctx.beginPath(); ctx.arc(myPos.x, myPos.y, 15, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+
+            requestAnimationFrame(draw);
+        }
+        draw();
+    </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NEON ARCADE MULTIPLAYER</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
