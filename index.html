@@ -26,7 +26,9 @@
         canvas.height = window.innerHeight;
 
         let players = {};
-
+        let bullets = [];
+        let myPos = { x: 0, y: 0 }; // Track your own position for the math
+        
         socket.on('connect', () => { status.innerText = "CONNECTED TO LAPTOP SERVER"; });
         socket.on('disconnect', () => { status.innerText = "SERVER OFFLINE"; });
 
@@ -40,6 +42,19 @@
         socket.on('player-disconnected', (id) => { delete players[id]; });
 
         let lastSendTime = 0;
+        // Listen for bullets from the server
+socket.on('bullet-spawned', (bullet) => {
+    bullets.push({
+        ...bullet,
+        startTime: Date.now() 
+    });
+});
+
+// Detect the Click
+window.addEventListener('mousedown', (e) => {
+    const angle = Math.atan2(e.clientY - myPos.y, e.clientX - myPos.x);
+    socket.emit('shoot', { angle: angle });
+});
 
     window.addEventListener('mousemove', (e) => {
     const now = Date.now();
@@ -63,10 +78,30 @@
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
                 ctx.fill();
+                
             }
             requestAnimationFrame(draw);
         }
-        draw();
+        draw();{
+            function draw() {
+    ctx.fillStyle = 'rgba(10, 10, 10, 0.3)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // ADD THIS BLOCK:
+    const now = Date.now();
+    bullets = bullets.filter(b => now - b.startTime < 2000); 
+    bullets.forEach(b => {
+        b.x += Math.cos(b.angle) * 7; 
+        b.y += Math.sin(b.angle) * 7;
+        ctx.fillStyle = "#fff700";
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // ... existing loop that draws players ...
+    requestAnimationFrame(draw);
+}
     </script>
 </body>
 </html>
