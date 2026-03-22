@@ -1,31 +1,66 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neon Arena P2P</title>
+    <title>Arcade Lobby</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        body { margin: 0; background: #000; color: #0ff; font-family: monospace; overflow: hidden; }
-        #ui { position: absolute; top: 10px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
-        #arena { width: 100vw; height: 100vh; position: relative; }
-        .player { 
-            position: absolute; width: 30px; height: 30px; border: 2px solid #fff;
-            box-shadow: 0 0 15px currentColor; transform: translate(-50%, -50%);
-            transition: all 0.05s linear; /* Smooths out network jitter */
-        }
-        #local-player { z-index: 5; background: #0ff; color: #0ff; }
+        body { margin: 0; background: #0a0a0a; overflow: hidden; color: #ff3e3e; font-family: monospace; }
+        canvas { display: block; }
+        #status { position: absolute; top: 10px; left: 10px; pointer-events: none; }
     </style>
 </head>
 <body>
-    <div id="ui">
-        <h1>NEON ARENA</h1>
-        <p id="status">Initializing...</p>
-    </div>
-    <div id="arena">
-        <div id="local-player" class="player"></div>
-    </div>
+    <div id="status">ESTABLISHING CONNECTION...</div>
+    <canvas id="gameCanvas"></canvas>
 
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <script src="script.js"></script>
+    <script>
+        // REPLACE THIS URL with your actual Localtunnel/Ngrok URL
+        const SERVER_URL = "https://your-tunnel-url-here.loca.lt";
+        
+        const socket = io(SERVER_URL);
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const status = document.getElementById('status');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let players = {};
+
+        socket.on('connect', () => { status.innerText = "CONNECTED TO LAPTOP SERVER"; });
+        socket.on('disconnect', () => { status.innerText = "SERVER OFFLINE"; });
+
+        // Receive the list of everyone already there
+        socket.on('current-players', (serverPlayers) => { players = serverPlayers; });
+
+        // Update a specific player when they move
+        socket.on('player-moved', (data) => { players[data.id] = data; });
+
+        // Remove a player when they leave
+        socket.on('player-disconnected', (id) => { delete players[id]; });
+
+        window.addEventListener('mousemove', (e) => {
+            const myPos = { x: e.clientX, y: e.clientY, color: '#00f7ff' };
+            // Send our position to your laptop
+            socket.emit('move', myPos);
+        });
+
+        function draw() {
+            ctx.fillStyle = 'rgba(10, 10, 10, 0.2)'; // Fading trail effect
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            for (let id in players) {
+                const p = players[id];
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = p.color || "#ff3e3e";
+                ctx.fillStyle = p.color || "#ff3e3e";
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            requestAnimationFrame(draw);
+        }
+        draw();
+    </script>
 </body>
 </html>
