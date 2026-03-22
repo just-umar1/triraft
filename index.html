@@ -1,107 +1,115 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Arcade Lobby</title>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEON ARCADE MULTIPLAYER</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        body { margin: 0; background: #0a0a0a; overflow: hidden; color: #ff3e3e; font-family: monospace; }
-        canvas { display: block; }
-        #status { position: absolute; top: 10px; left: 10px; pointer-events: none; }
+        body { margin: 0; background: #050505; overflow: hidden; font-family: 'Courier New', monospace; color: #00f7ff; }
+        canvas { display: block; cursor: crosshair; }
+        #ui { position: absolute; top: 20px; left: 20px; pointer-events: none; text-shadow: 0 0 10px #00f7ff; }
     </style>
 </head>
 <body>
-    <div id="status">ESTABLISHING CONNECTION...</div>
-    <canvas id="gameCanvas"></canvas>
+    <div id="ui">
+        <h1>ARCADE_SESSION_ACTIVE</h1>
+        <p id="status">CONNECTING...</p>
+        <p>CLICK TO SHOOT | MOVE MOUSE TO NAVIGATE</p>
+    </div>
+    <canvas id="canvas"></canvas>
 
     <script>
-        // REPLACE THIS URL with your actual Localtunnel/Ngrok URL
-        const SERVER_URL = "https://rotary-sensors-justice-east.trycloudflare.com";
-        
+        // --- CONFIGURATION ---
+        const SERVER_URL = "https://typical-technological-especially-carey.trycloudflare.com"; 
         const socket = io(SERVER_URL);
-        const canvas = document.getElementById('gameCanvas');
+        const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const status = document.getElementById('status');
 
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
+        // --- GAME STATE ---
         let players = {};
         let bullets = [];
-        let myPos = { x: 0, y: 0 }; // Track your own position for the math
-        
-        socket.on('connect', () => { status.innerText = "CONNECTED TO LAPTOP SERVER"; });
-        socket.on('disconnect', () => { status.innerText = "SERVER OFFLINE"; });
+        let myPos = { x: canvas.width/2, y: canvas.height/2, color: '#00f7ff' };
+        let lastSend = 0;
 
-        // Receive the list of everyone already there
-        socket.on('current-players', (serverPlayers) => { players = serverPlayers; });
-
-        // Update a specific player when they move
+        // --- NETWORK EVENTS ---
+        socket.on('connect', () => { status.innerText = "STATUS: ONLINE"; });
+        socket.on('disconnect', () => { status.innerText = "STATUS: OFFLINE"; });
+        socket.on('current-players', (data) => { players = data; });
         socket.on('player-moved', (data) => { players[data.id] = data; });
-
-        // Remove a player when they leave
         socket.on('player-disconnected', (id) => { delete players[id]; });
-
-        let lastSendTime = 0;
-        // Listen for bullets from the server
-socket.on('bullet-spawned', (bullet) => {
-    bullets.push({
-        ...bullet,
-        startTime: Date.now() 
-    });
-});
-
-// Detect the Click
-window.addEventListener('mousedown', (e) => {
-    const angle = Math.atan2(e.clientY - myPos.y, e.clientX - myPos.x);
-    socket.emit('shoot', { angle: angle });
-});
-
-    window.addEventListener('mousemove', (e) => {
-    const now = Date.now();
-    // Only send data every 30 milliseconds (roughly 33fps)
-    if (now - lastSendTime > 30) {
-        const myPos = { x: e.clientX, y: e.clientY, color: '#00f7ff' };
-        socket.emit('move', myPos);
-        lastSendTime = now;
-        }
+        socket.on('bullet-spawned', (b) => { 
+            bullets.push({ ...b, time: Date.now() }); 
         });
 
+        // --- INPUTS ---
+        window.addEventListener('mousemove', (e) => {
+            myPos.x = e.clientX;
+            myPos.y = e.clientY;
+            
+            // Throttle network updates to 30fps to prevent stalling
+            const now = Date.now();
+            if (now - lastSend > 33) {
+                socket.emit('move', { x: myPos.x, y: myPos.y, color: myPos.color });
+                lastSend = now;
+            }
+        });
+
+        window.addEventListener('mousedown', (e) => {
+            const angle = Math.atan2(e.clientY - myPos.y, e.clientX - myPos.x);
+            socket.emit('shoot', { angle: angle });
+        });
+
+        // --- CORE LOOP ---
         function draw() {
-            ctx.fillStyle = 'rgba(10, 10, 10, 0.2)'; // Fading trail effect
+            // Motion Blur Effect
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.15)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+            const now = Date.now();
+
+            // Draw & Update Bullets
+            bullets = bullets.filter(b => now - b.time < 1500); // Kill bullets after 1.5s
+            bullets.forEach(b => {
+                b.x += Math.cos(b.angle) * 12;
+                b.y += Math.sin(b.angle) * 12;
+                
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = "#fff700";
+                ctx.fillStyle = "#fff700";
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Other Players
             for (let id in players) {
+                if (id === socket.id) continue; // Don't draw ourselves twice
                 const p = players[id];
-                ctx.shadowBlur = 15;
+                ctx.shadowBlur = 20;
                 ctx.shadowColor = p.color || "#ff3e3e";
                 ctx.fillStyle = p.color || "#ff3e3e";
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+                ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
                 ctx.fill();
-                
             }
+
+            // Draw Me
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = myPos.color;
+            ctx.fillStyle = myPos.color;
+            ctx.beginPath();
+            ctx.arc(myPos.x, myPos.y, 12, 0, Math.PI * 2);
+            ctx.fill();
+
             requestAnimationFrame(draw);
         }
-        draw();{
-            function draw() {
-    ctx.fillStyle = 'rgba(10, 10, 10, 0.3)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // ADD THIS BLOCK:
-    const now = Date.now();
-    bullets = bullets.filter(b => now - b.startTime < 2000); 
-    bullets.forEach(b => {
-        b.x += Math.cos(b.angle) * 7; 
-        b.y += Math.sin(b.angle) * 7;
-        ctx.fillStyle = "#fff700";
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
-        ctx.fill();
-    });
-
-    // ... existing loop that draws players ...
-    requestAnimationFrame(draw);
-}
+        draw();
     </script>
 </body>
 </html>
